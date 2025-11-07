@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Instructor Dashboard</title>
+<style>
+  body {
+    background: #0f172a; color: #e5e7eb; font-family: system-ui, sans-serif;
+    margin: 0; padding: 20px;
+  }
+  h1 { color: #22c55e; margin-bottom: 10px; }
+  h2 { margin-top: 30px; color: #fbbf24; }
+  h3 { margin: 15px 0 10px 0; color: #60a5fa; }
+  table {
+    width: 100%; border-collapse: collapse; margin-bottom: 20px;
+    background: #111827; border: 1px solid #1f2937; border-radius: 8px;
+  }
+  th, td {
+    padding: 10px; text-align: left; border-bottom: 1px solid #1f2937;
+  }
+  th {
+    background: #1e293b; cursor: pointer; position: sticky; top: 0;
+  }
+  tr:nth-child(even) { background: #0b1220; }
+  tr:hover { background: #1e293b; }
+  button {
+    background: #22c55e; color: #fff; border: none; border-radius: 6px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  button:hover { background: #16a34a; }
+  .container { max-width: 1200px; margin: auto; }
+  .subject-block { margin-bottom: 30px; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; background: #0b1220; }
+  .year-section-block { margin-top: 12px; padding-left: 16px; }
+  .loading { color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Instructor Dashboard</h1>
+  <p class="loading">Loading data from Firestore...</p>
+  <div id="content"></div>
+</div>
+
+<script type="module">
+// Firebase setup
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// For DOCX generation
+import { Document, Packer, Paragraph, TextRun } from "https://cdn.jsdelivr.net/npm/docx@8.0.1/+esm";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB-idZOq8h9sVttNdzXE2t8FMoYI_snq7g",
+  authDomain: "kuya-quiz-100.firebaseapp.com",
+  projectId: "kuya-quiz-100",
+  storageBucket: "kuya-quiz-100.appspot.com",
+  messagingSenderId: "74623975270",
+  appId: "1:74623975270:web:dec2b21dbee017292952a7"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const content = document.getElementById("content");
+const loading = document.querySelector(".loading");
+
+// Utility: Create DOCX for student
+async function downloadDoc(student) {
+  const doc = new Document({
+    sections: [{
+      properties: {},
+      children: [
+        new Paragraph({
+          children: [new TextRun({ text: `Name: ${student.name}`, bold: true })],
+        }),
+        new Paragraph(`Year & Section: ${student.yearSection}`),
+        new Paragraph(`Final Score: ${student.finalScore} / 100`),
+        new Paragraph(`Penalties: ${student.penalties * 10}`),
+        new Paragraph(" "),
+        new Paragraph({ text: "Answer Sheet", bold: true }),
+        ...student.sheet.map((s, i) =>
+          new Paragraph({
+            children: [
+              new TextRun({ text: `${i+1}. ${s.text}`, break: 1 }),
+              new TextRun({ text: `Your answer: ${s.chosen || '—'}   ` }),
+              new TextRun({ text: `Correct answer: ${s.correct}`, color: (s.chosen !== s.correct) ? "FF0000" : "00FF00" }),
+            ]
+          })
+        ),
+      ],
+    }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${student.name.replace(/\s+/g,'_')}_answers.docx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Utility: Create sortable table
+function createTable(entries) {
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th data-key="name">Name</th>
+        <th data-key="yearSection">Year & Section</th>
+        <th data-key="rawScore">Raw</th>
+        <th data-key="finalScore">Final</th>
+        <th data-key="penalties">Penalties</th>
+        <th data-key="createdAt">Date</th>
+        <th>Download</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector("tbody");
+
+  function renderRows(list) {
+    tbody.innerHTML = "";
+    list.forEach(e => {
+      const tr = document.createElement("tr");
+      const dateStr = e.createdAt?.toDate ? e.createdAt.toDate().toLocaleString() : "—";
+      tr.innerHTML = `
+        <td>${e.name}</td>
+        <td>${e.yearSection}</td>
+        <td>${e.rawScore}</td>
+        <td>${e.finalScore}</td>
+        <td>${e.penalties}</td>
+        <td>${dateStr}</td>
+        <td><button>Download</button></td>
+      `;
+      tr.querySelector("button").addEventListener("click", ()=>downloadDoc(e));
+      tbody.appendChild(tr);
+    });
+  }
+
+  renderRows(entries);
+
+  table.querySelectorAll("th[data-key]").forEach(th=>{
+    let asc = true;
+    th.addEventListener("click", ()=>{
+      const key = th.dataset.key;
+      entries.sort((a,b)=>{
+        if(a[key] < b[key]) return asc ? -1 : 1;
+        if(a[key] > b[key]) return asc ? 1 : -1;
+        return 0;
+      });
+      asc = !asc;
+      renderRows(entries);
+    });
+  });
+
+  return table;
+}
+
+// Fetch data
+(async ()=>{
+  const qSnap = await getDocs(query(collection(db, "submissions"), orderBy("name")));
+  const data = qSnap.docs.map(d => ({id: d.id, ...d.data()}));
+
+  if (data.length === 0) {
+    loading.textContent = "No data found.";
+    return;
+  }
+
+  loading.remove();
+
+  // Determine subject from sheet content
+  data.forEach(d=>{
+    const allQ = (d.sheet || []).map(s=>s.text).join(" ").toLowerCase();
+    if(allQ.includes("genetically modified organism")) d.subject = "biotech";
+    else if(allQ.includes("nitrogen fixation")) d.subject = "cropsci";
+    else d.subject = "unspecified";
+  });
+
+  // Group by subject → yearSection
+  const grouped = {};
+  data.forEach(d=>{
+    const subject = d.subject || "unspecified";
+    const year = d.yearSection || "Unknown Section";
+    if(!grouped[subject]) grouped[subject] = {};
+    if(!grouped[subject][year]) grouped[subject][year] = [];
+    grouped[subject][year].push(d);
+  });
+
+  // Build HTML
+  Object.keys(grouped).sort().forEach(subject=>{
+    const subjectDiv = document.createElement("div");
+    subjectDiv.className = "subject-block";
+    subjectDiv.innerHTML = `<h2>${subject.toUpperCase()}</h2>`;
+
+    Object.keys(grouped[subject]).sort().forEach(year=>{
+      const yearDiv = document.createElement("div");
+      yearDiv.className = "year-section-block";
+      yearDiv.innerHTML = `<h3>${year}</h3>`;
+      const table = createTable(grouped[subject][year]);
+      yearDiv.appendChild(table);
+      subjectDiv.appendChild(yearDiv);
+    });
+
+    content.appendChild(subjectDiv);
+  });
+})();
+</script>
+</body>
+</html>
