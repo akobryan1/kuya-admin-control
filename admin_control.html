@@ -38,6 +38,7 @@
 <body>
 <div class="container">
   <h1>Instructor Dashboard</h1>
+  
   <p class="loading">Loading data from Firestore...</p>
   <div id="content"></div>
 </div>
@@ -61,6 +62,23 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+// --- ADMIN LOGIN LOGIC ---
+import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const auth = getAuth(app);
+
+
+const email = "admin@quizportal.local";
+const password = prompt("Enter admin password to access dashboard:");
+
+try {
+  await signInWithEmailAndPassword(auth, email, password);
+  console.log("✅ Admin authenticated successfully");
+} catch (err) {
+  alert("Authentication failed: " + err.message);
+  throw new Error("Stopped — Invalid admin credentials.");
+}
+
 
 const content = document.getElementById("content");
 const loading = document.querySelector(".loading");
