@@ -67,17 +67,20 @@ import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/fir
 
 const auth = getAuth(app);
 
+// Ask for both email and password
+const email = prompt("Enter admin email:");
+const password = prompt("Enter admin password:");
 
-const email = "abulencia.arturo3rd@gmail.com";
-const password = prompt("Enter admin password to access dashboard:");
-
+// Try to sign in
 try {
   await signInWithEmailAndPassword(auth, email, password);
-  console.log("✅ Admin authenticated successfully");
+  console.log("✅ Admin authenticated successfully as " + email);
+  alert("Welcome, " + email + "! Loading data...");
 } catch (err) {
   alert("Authentication failed: " + err.message);
   throw new Error("Stopped — Invalid admin credentials.");
 }
+
 
 
 const content = document.getElementById("content");
